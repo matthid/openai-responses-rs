@@ -20,6 +20,9 @@ use {
 /// Types for interacting with the Responses API.
 pub mod types;
 
+/// Re-export the derive macro so users only need `openai_responses` as a dependency.
+pub use openai_responses_derive::OpenAiFunction;
+
 /// The OpenAI Responses API Client.
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -237,10 +240,10 @@ pub mod tool_builder {
     //! Helpers to generate an OpenAI *Tool* definition from a Rust structure.
     //!
     //! The implementation relies on the `schemars` crate to obtain a JSON
-    //! Schema for the Rust type.  If you use the `openai-function` derive
-    //! macro (`openai-responses-derive`) the macro will inject the necessary
-    //! `NAME` and `DESCRIPTION` constants automatically – otherwise you can
-    //! implement the [`IntoTool`] trait manually.
+    //! Schema for the Rust type.  If you use the `OpenAiFunction` derive macro
+    //! (`openai_responses_derive`) the macro will inject the necessary `NAME`
+    //! and `DESCRIPTION` constants automatically – otherwise you can implement
+    //! the [`IntoTool`] trait manually.
 
     use schemars::JsonSchema;
     use serde_json::Value;

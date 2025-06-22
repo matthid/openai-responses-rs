@@ -23,6 +23,8 @@ reqwest-eventsource = { version = "0.6.0", optional = true }
 reqwest = { version = "0.12.14", features = ["json"], default-features = false }
 schemars = { version = "0.9.0", features = ["std", "derive", "chrono04"] }
 
+# NEW – local procedural-macro crate that lives *inside* this directory
+openai_responses_derive = { path = "./openai_responses_derive" }
 
 [features]
 default = ["rustls", "stream", "schema"]
