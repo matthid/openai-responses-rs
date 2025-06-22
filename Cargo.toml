@@ -21,9 +21,11 @@ serde = { version = "1.0.219", features = ["derive"] }
 async-fn-stream = { version = "0.2.2", optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }
 reqwest = { version = "0.12.14", features = ["json"], default-features = false }
+schemars = { version = "0.9.0", features = ["std", "derive", "chrono04"] }
+
 
 [features]
-default = ["rustls", "stream"]
+default = ["rustls", "stream", "schema"]
 # Enable streaming responses
 stream = ["dep:reqwest-eventsource", "dep:futures", "dep:async-fn-stream"]
 # Enable rustls for TLS support
@@ -34,6 +36,7 @@ rustls-webpki-roots = ["reqwest/rustls-tls-webpki-roots"]
 native-tls = ["reqwest/native-tls"]
 # Remove dependency on OpenSSL
 native-tls-vendored = ["reqwest/native-tls-vendored"]
+schema = []
 
 [dev-dependencies]
 tokio = { version = "1.44.1", features = ["macros", "rt", "rt-multi-thread"] }

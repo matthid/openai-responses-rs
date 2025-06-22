@@ -260,9 +260,9 @@ pub mod tool_builder {
 
         /// Convert the Rust type into a [`Tool`] definition consumable by the
         /// OpenAI API.
-        fn as_tool() -> Tool {
+        fn convert_into_tool() -> Tool {
             let schema = schemars::schema_for!(Self);
-            let parameters: Value = serde_json::to_value(&schema.schema)
+            let parameters: Value = serde_json::to_value(&schema)
                 .expect("serialising JSON schema failed");
 
             Tool::Function {
@@ -281,6 +281,6 @@ pub mod tool_builder {
     /// Convenience helper.
     #[inline]
     pub fn tool<T: IntoTool>() -> Tool {
-        T::as_tool()
+        T::convert_into_tool()
     }
 }
