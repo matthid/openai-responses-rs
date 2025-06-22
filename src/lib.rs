@@ -246,16 +246,16 @@ pub mod tool_builder {
     //! the [`IntoTool`] trait manually.
 
     use schemars::JsonSchema;
-    use serde_json::{Map, Value};
+    use serde_json::Value;
 
-    use crate::types::Tool;
+    use crate::types::{Function, Tool};
 
     /// Trait implemented for structures that can be exposed to the model as a
     /// callable *tool* (i.e. function).
     ///
     /// The default `as_tool` implementation turns the [`schemars`] schema into
     /// the `parameters` object expected by OpenAI.
-    pub trait IntoTool: JsonSchema {
+    pub trait IntoFunction: JsonSchema {
         /// Name under which the model should call the tool.
         const NAME: &'static str;
         /// Optional human-readable description.
@@ -263,7 +263,7 @@ pub mod tool_builder {
 
         /// Convert the Rust type into a [`Tool`] definition consumable by the
         /// OpenAI API.
-        fn convert_into_tool() -> Tool {
+        fn convert_into_function() -> Function {
             // Generate full JSON-schema for the type
             let schema = schemars::schema_for!(Self);
             let mut parameters: Value =
@@ -279,7 +279,7 @@ pub mod tool_builder {
                     .or_insert_with(|| Value::Bool(false));
             }
 
-            Tool::Function {
+            Function {
                 name: Self::NAME.to_string(),
                 description: if Self::DESCRIPTION.is_empty() {
                     None
@@ -294,7 +294,7 @@ pub mod tool_builder {
 
     /// Convenience helper.
     #[inline]
-    pub fn tool<T: IntoTool>() -> Tool {
-        T::convert_into_tool()
+    pub fn tool<T: IntoFunction>() -> Function {
+        T::convert_into_function()
     }
 }
