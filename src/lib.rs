@@ -243,7 +243,7 @@ pub mod tool_builder {
     //! Schema for the Rust type.  If you use the `OpenAiFunction` derive macro
     //! (`openai_responses_derive`) the macro will inject the necessary `NAME`
     //! and `DESCRIPTION` constants automatically – otherwise you can implement
-    //! the [`IntoTool`] trait manually.
+    //! the [`IntoFunction`] trait manually.
 
     use schemars::JsonSchema;
     use serde_json::Value;
@@ -261,10 +261,9 @@ pub mod tool_builder {
         /// Optional human-readable description.
         const DESCRIPTION: &'static str = "";
 
-        /// Convert the Rust type into a [`Tool`] definition consumable by the
-        /// OpenAI API.
+        /// Convert the Rust type into a [`Function`] definition.
         fn convert_into_function() -> Function {
-            // Generate full JSON-schema for the type
+            // Build full JSON-schema for the type
             let schema = schemars::schema_for!(Self);
             let mut parameters: Value =
                 serde_json::to_value(&schema).expect("serialising JSON schema failed");
@@ -273,7 +272,6 @@ pub mod tool_builder {
             if let Value::Object(ref mut map) = parameters {
                 map.remove("$schema");
                 map.remove("title");
-
                 // Ensure `additionalProperties` is always present (default: false)
                 map.entry("additionalProperties")
                     .or_insert_with(|| Value::Bool(false));
@@ -292,7 +290,7 @@ pub mod tool_builder {
         }
     }
 
-    /// Convenience helper.
+    /// Convenience helper – returns the [`Function`]
     #[inline]
     pub fn tool<T: IntoFunction>() -> Function {
         T::convert_into_function()
