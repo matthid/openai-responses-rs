@@ -227,3 +227,60 @@ impl Client {
             .await
     }
 }
+
+/* -------------------------------------------------------------------------
+   Helper: build `Tool` specs automatically from Rust types
+   --------------------------------------------------------------------- */
+
+#[cfg(feature = "schema")]
+pub mod tool_builder {
+    //! Helpers to generate an OpenAI *Tool* definition from a Rust structure.
+    //!
+    //! The implementation relies on the `schemars` crate to obtain a JSON
+    //! Schema for the Rust type.  If you use the `openai-function` derive
+    //! macro (`openai-responses-derive`) the macro will inject the necessary
+    //! `NAME` and `DESCRIPTION` constants automatically – otherwise you can
+    //! implement the [`IntoTool`] trait manually.
+
+    use schemars::JsonSchema;
+    use serde_json::Value;
+
+    use crate::types::Tool;
+
+    /// Trait implemented for structures that can be exposed to the model as a
+    /// callable *tool* (i.e. function).
+    ///
+    /// The default `as_tool` implementation turns the [`schemars`] schema into
+    /// the `parameters` object expected by OpenAI.
+    pub trait IntoTool: JsonSchema {
+        /// Name under which the model should call the tool.
+        const NAME: &'static str;
+        /// Optional human-readable description.
+        const DESCRIPTION: &'static str = "";
+
+        /// Convert the Rust type into a [`Tool`] definition consumable by the
+        /// OpenAI API.
+        fn as_tool() -> Tool {
+            let schema = schemars::schema_for!(Self);
+            let parameters: Value = serde_json::to_value(&schema.schema)
+                .expect("serialising JSON schema failed");
+
+            Tool::Function {
+                name: Self::NAME.to_string(),
+                description: if Self::DESCRIPTION.is_empty() {
+                    None
+                } else {
+                    Some(Self::DESCRIPTION.to_string())
+                },
+                parameters,
+                strict: true,
+            }
+        }
+    }
+
+    /// Convenience helper.
+    #[inline]
+    pub fn tool<T: IntoTool>() -> Tool {
+        T::as_tool()
+    }
+}
