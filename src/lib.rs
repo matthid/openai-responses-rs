@@ -3,8 +3,8 @@
 #![doc = include_str!("../README.md")]
 
 use reqwest::{
-    Client as Http, StatusCode,
     header::{self, HeaderMap, HeaderValue},
+    Client as Http, StatusCode,
 };
 use serde_json::json;
 use std::env;
@@ -246,7 +246,7 @@ pub mod tool_builder {
     //! the [`IntoTool`] trait manually.
 
     use schemars::JsonSchema;
-    use serde_json::Value;
+    use serde_json::{Map, Value};
 
     use crate::types::Tool;
 
@@ -264,9 +264,20 @@ pub mod tool_builder {
         /// Convert the Rust type into a [`Tool`] definition consumable by the
         /// OpenAI API.
         fn convert_into_tool() -> Tool {
+            // Generate full JSON-schema for the type
             let schema = schemars::schema_for!(Self);
-            let parameters: Value = serde_json::to_value(&schema)
-                .expect("serialising JSON schema failed");
+            let mut parameters: Value =
+                serde_json::to_value(&schema).expect("serialising JSON schema failed");
+
+            // Strip keys that are not wanted by the OpenAI spec
+            if let Value::Object(ref mut map) = parameters {
+                map.remove("$schema");
+                map.remove("title");
+
+                // Ensure `additionalProperties` is always present (default: false)
+                map.entry("additionalProperties")
+                    .or_insert_with(|| Value::Bool(false));
+            }
 
             Tool::Function {
                 name: Self::NAME.to_string(),
