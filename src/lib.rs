@@ -248,7 +248,49 @@ pub mod tool_builder {
     use schemars::JsonSchema;
     use serde_json::Value;
 
-    use crate::types::{Function, Tool};
+    use crate::types::Function;
+
+    /// Recursively processes a JSON schema to replace oneOf with anyOf and add additionalProperties: false to all objects
+    fn process_schema_recursively(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                // Replace oneOf with anyOf
+                if let Some(one_of) = map.remove("oneOf") {
+                    map.insert("anyOf".to_string(), one_of);
+                }
+
+                // Add additionalProperties: false to all object types
+                if map.contains_key("type") {
+                    if let Some(Value::String(type_str)) = map.get("type") {
+                        if type_str == "object" {
+                            map.entry("additionalProperties".to_string())
+                                .or_insert_with(|| Value::Bool(false));
+                        }
+                    }
+                }
+
+                // Also handle objects that don't have explicit type but have properties
+                if map.contains_key("properties") && !map.contains_key("type") {
+                    map.entry("additionalProperties".to_string())
+                        .or_insert_with(|| Value::Bool(false));
+                }
+
+                // Recursively process all values in the object
+                for (_, v) in map.iter_mut() {
+                    process_schema_recursively(v);
+                }
+            }
+            Value::Array(arr) => {
+                // Recursively process all items in arrays
+                for item in arr.iter_mut() {
+                    process_schema_recursively(item);
+                }
+            }
+            _ => {
+                // For primitive values, no processing needed
+            }
+        }
+    }
 
     /// Trait implemented for structures that can be exposed to the model as a
     /// callable *tool* (i.e. function).
@@ -268,7 +310,7 @@ pub mod tool_builder {
             let mut parameters: Value =
                 serde_json::to_value(&schema).expect("serialising JSON schema failed");
 
-            // Strip keys that are not wanted by the OpenAI spec
+            // Strip keys that are not wanted by the OpenAI spec and process schema
             if let Value::Object(ref mut map) = parameters {
                 map.remove("$schema");
                 map.remove("title");
@@ -276,6 +318,9 @@ pub mod tool_builder {
                 map.entry("additionalProperties")
                     .or_insert_with(|| Value::Bool(false));
             }
+
+            // Recursively process the schema to replace oneOf with anyOf and add additionalProperties: false
+            process_schema_recursively(&mut parameters);
 
             Function {
                 name: Self::NAME.to_string(),
