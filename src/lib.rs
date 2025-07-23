@@ -151,6 +151,10 @@ impl Client {
                 let message = match event {
                     Ok(EventSourceEvent::Open) => continue,
                     Ok(EventSourceEvent::Message(message)) => message,
+                    Err(e @ reqwest_eventsource::Error::Transport(_)) => {
+                        emitter.emit_err(StreamError::Stream(e)).await;
+                        break;   // stop consuming – the EventSource will be dropped
+                    }
                     Err(error) => {
                         if matches!(error, reqwest_eventsource::Error::StreamEnded) {
                             break;
