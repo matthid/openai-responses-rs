@@ -8,6 +8,7 @@ use reqwest::{
 };
 use serde_json::json;
 use std::env;
+use base64::Engine;
 use types::{Error, Include, InputItemList, Request, Response, ResponseResult};
 #[cfg(feature = "stream")]
 use {
@@ -51,8 +52,63 @@ pub enum CreateError {
 pub enum StreamError {
     #[error("{0}")]
     Stream(#[from] reqwest_eventsource::Error),
+
+    #[error("HTTP error: {status}. Body: {body}")]
+    Http {
+        status: reqwest::StatusCode,
+        body: String,
+    },
+
+    #[error("Invalid content type: {content_type:?}. Body: {body}")]
+    InvalidContentType {
+        content_type: reqwest::header::HeaderValue,
+        body: String,
+    },
     #[error("Failed to parse event data: {0}")]
     Parsing(#[from] serde_json::Error),
+}
+
+async fn read_body_safely(mut response: reqwest::Response) -> String {
+    const MAX_BYTES: usize = 16 * 1024;
+    let ct = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let prefer_text = ct.contains("text/") || ct.contains("json") || ct.contains("xml") || ct.contains("html");
+
+    if prefer_text {
+        match response.text().await {
+            Ok(mut s) => {
+                if s.len() > MAX_BYTES { s.truncate(MAX_BYTES); s.push_str("… [truncated]"); }
+                s
+            }
+            Err(e) => format!("<<failed to read body as text: {}>>", e),
+        }
+    } else {
+        match response.bytes().await {
+            Ok(bytes) => {
+                let slice = &bytes[..bytes.len().min(MAX_BYTES)];
+                match std::str::from_utf8(slice) {
+                    Ok(s) if !s.trim().is_empty() => {
+                        let mut s = s.to_string();
+                        if bytes.len() > MAX_BYTES { s.push_str("… [truncated]"); }
+                        s
+                    }
+                    _ => {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(slice);
+                        if bytes.len() > MAX_BYTES {
+                            format!("<<{} bytes binary (base64, truncated)>> {}", bytes.len(), b64)
+                        } else {
+                            format!("<<{} bytes binary (base64)>> {}", bytes.len(), b64)
+                        }
+                    }
+                }
+            }
+            Err(e) => format!("<<failed to read body as bytes: {}>>", e),
+        }
+    }
 }
 
 impl Client {
@@ -151,6 +207,17 @@ impl Client {
                 let message = match event {
                     Ok(EventSourceEvent::Open) => continue,
                     Ok(EventSourceEvent::Message(message)) => message,
+                    Err(reqwest_eventsource::Error::InvalidStatusCode(status, response)) => {
+                        let body = read_body_safely(response).await;
+                        emitter.emit_err(StreamError::Http { status, body }).await;
+                        break; // stop or retry per your policy
+                    }
+                    Err(reqwest_eventsource::Error::InvalidContentType(header, response)) => {
+                        let body = read_body_safely(response).await;
+                        emitter.emit_err(StreamError::InvalidContentType { content_type: header, body }).await;
+                        break; // stop or retry per your policy
+                    }
+
                     Err(e @ reqwest_eventsource::Error::Transport(_)) => {
                         emitter.emit_err(StreamError::Stream(e)).await;
                         break;   // stop consuming – the EventSource will be dropped

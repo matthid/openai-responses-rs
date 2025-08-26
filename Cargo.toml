@@ -25,6 +25,7 @@ schemars = { version = "1.0.3", features = ["std", "derive", "chrono04"] }
 
 # NEW – local procedural-macro crate that lives *inside* this directory
 openai_responses_derive = { path = "./openai_responses_derive" }
+base64 = "0.22.1"
 
 [features]
 default = ["rustls", "stream", "schema"]
