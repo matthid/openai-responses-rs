@@ -68,7 +68,7 @@ pub enum StreamError {
     Parsing(#[from] serde_json::Error),
 }
 
-async fn read_body_safely(mut response: reqwest::Response) -> String {
+async fn read_body_safely(response: reqwest::Response) -> String {
     const MAX_BYTES: usize = 16 * 1024;
     let ct = response
         .headers()
