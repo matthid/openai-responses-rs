@@ -322,12 +322,39 @@ pub mod tool_builder {
     use crate::types::Function;
 
     /// Recursively processes a JSON schema to replace oneOf with anyOf and add additionalProperties: false to all objects
+    /// Additionally, when encountering anyOf branches, ensures each branch that defines properties has a
+    /// `required` array listing all property keys, as required by OpenAI's function schema validation.
     fn process_schema_recursively(value: &mut Value) {
         match value {
             Value::Object(map) => {
                 // Replace oneOf with anyOf
                 if let Some(one_of) = map.remove("oneOf") {
                     map.insert("anyOf".to_string(), one_of);
+                }
+
+                // If we have an anyOf array, ensure each branch with properties declares all of them as required
+                if let Some(Value::Array(any_of_arr)) = map.get_mut("anyOf") {
+                    for branch in any_of_arr.iter_mut() {
+                        if let Value::Object(branch_map) = branch {
+                            // Prefer explicit object type, but even without it, if properties exist we treat as object
+                            let has_properties = branch_map.get("properties").and_then(Value::as_object).is_some();
+
+                            if has_properties {
+                                // Ensure additionalProperties is false for object branches
+                                branch_map
+                                    .entry("additionalProperties".to_string())
+                                    .or_insert_with(|| Value::Bool(false));
+
+                                // Build required = all property keys
+                                if let Some(props) = branch_map.get("properties").and_then(Value::as_object) {
+                                    let mut required_keys: Vec<Value> = props.keys().map(|k| Value::String(k.clone())).collect();
+                                    // Keep stable order for determinism
+                                    required_keys.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
+                                    branch_map.insert("required".to_string(), Value::Array(required_keys));
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Add additionalProperties: false to all object types
@@ -410,5 +437,133 @@ pub mod tool_builder {
     #[inline]
     pub fn tool<T: IntoFunction>() -> Function {
         T::convert_into_function()
+    }
+
+    #[cfg(all(test, feature = "schema"))]
+    mod tests {
+        use super::*;
+        use serde_json::json;
+
+        fn process(mut v: Value) -> Value {
+            process_schema_recursively(&mut v);
+            v
+        }
+
+        #[test]
+        fn replaces_oneof_with_anyof_and_sets_required_and_additional_properties() {
+            let schema = json!({
+                "type": "object",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "a": {"type": "string"},
+                            "b": {"type": "integer"}
+                        }
+                    }
+                ]
+            });
+
+            let out = process(schema);
+
+            // oneOf removed, anyOf present
+            let obj = out.as_object().unwrap();
+            assert!(obj.get("oneOf").is_none());
+            let any_of = obj.get("anyOf").and_then(|v| v.as_array()).unwrap();
+            assert_eq!(any_of.len(), 1);
+
+            // Branch has required all keys and additionalProperties=false
+            let branch = any_of[0].as_object().unwrap();
+            // additionalProperties should be false on the branch
+            assert_eq!(branch.get("additionalProperties"), Some(&Value::Bool(false)));
+
+            let required = branch.get("required").and_then(|v| v.as_array()).unwrap();
+            let req_keys: Vec<String> = required.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            // Sorted order guaranteed by implementation
+            assert_eq!(req_keys, vec!["a".to_string(), "b".to_string()]);
+
+            // Also the top-level object got additionalProperties=false
+            assert_eq!(obj.get("additionalProperties"), Some(&Value::Bool(false)));
+        }
+
+        #[test]
+        fn sets_additional_properties_false_for_plain_object_and_properties_without_type() {
+            // Case 1: explicit object type
+            let schema1 = json!({
+                "type": "object",
+                "properties": {"x": {"type": "number"}}
+            });
+            let out1 = process(schema1);
+            assert_eq!(out1.get("additionalProperties"), Some(&Value::Bool(false)));
+
+            // Case 2: properties present without explicit type
+            let schema2 = json!({
+                "properties": {"y": {"type": "boolean"}}
+            });
+            let out2 = process(schema2);
+            assert_eq!(out2.get("additionalProperties"), Some(&Value::Bool(false)));
+        }
+
+        #[test]
+        fn anyof_only_sets_required_for_object_like_branches() {
+            let schema = json!({
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "string"}}}
+                ]
+            });
+            let out = process(schema);
+            let any_of = out.get("anyOf").and_then(|v| v.as_array()).unwrap();
+
+            // First branch (string) should not get required
+            assert!(any_of[0].get("required").is_none());
+
+            // Second branch should have required and additionalProperties=false
+            let br2 = any_of[1].as_object().unwrap();
+            assert_eq!(br2.get("additionalProperties"), Some(&Value::Bool(false)));
+            let req = br2.get("required").and_then(|v| v.as_array()).unwrap();
+            let keys: Vec<&str> = req.iter().map(|v| v.as_str().unwrap()).collect();
+            assert_eq!(keys, vec!["x", "y"]);
+        }
+
+        #[test]
+        fn recurses_into_nested_structures() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "inner": {
+                        "oneOf": [
+                            {"type": "object", "properties": {"a": {"type": "number"}}},
+                            {"type": "array", "items": {"oneOf": [
+                                {"type": "object", "properties": {"z": {"type": "string"}}},
+                                {"type": "null"}
+                            ]}}
+                        ]
+                    }
+                }
+            });
+
+            let out = process(schema);
+
+            // Drill down: properties.inner.anyOf exists
+            let inner = out.get("properties").unwrap().get("inner").unwrap();
+            let any1 = inner.get("anyOf").and_then(|v| v.as_array()).unwrap();
+
+            // First branch object: has required ["a"] and additionalProperties=false
+            let b0 = any1[0].as_object().unwrap();
+            assert_eq!(b0.get("additionalProperties"), Some(&Value::Bool(false)));
+            let req0 = b0.get("required").and_then(|v| v.as_array()).unwrap();
+            assert_eq!(req0.len(), 1);
+            assert_eq!(req0[0], Value::String("a".into()));
+
+            // Second branch is array whose items had oneOf -> now anyOf
+            let items = any1[1].get("items").unwrap();
+            let any2 = items.get("anyOf").and_then(|v| v.as_array()).unwrap();
+            // its first branch object gets required ["z"] and additionalProperties=false
+            let inner_obj = any2[0].as_object().unwrap();
+            assert_eq!(inner_obj.get("additionalProperties"), Some(&Value::Bool(false)));
+            let reqz = inner_obj.get("required").and_then(|v| v.as_array()).unwrap();
+            assert_eq!(reqz, &vec![Value::String("z".into())]);
+        }
     }
 }
