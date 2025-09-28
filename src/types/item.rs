@@ -17,6 +17,9 @@ pub enum OutputItem {
     FileSearch(FileSearchCall),
     /// A tool call to run a function. See the [function calling guide](https://platform.openai.com/docs/guides/function-calling) for more information.
     FunctionCall(FunctionCall),
+    /// An image generation call output.
+    #[serde(rename = "image_generation_call")]
+    ImageGenerationCall(ImageGenerationCall),
     /// The results of a web search tool call. See the [web search guide](https://platform.openai.com/docs/guides/tools-web-search) for more information.
     #[serde(rename = "web_search_call")]
     WebSearchResults(WebSearchCall),
@@ -210,6 +213,12 @@ pub struct OutputMessage {
     pub role: Role,
     /// The status of the message input.
     pub status: MessageStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageGenerationCall {
+    /// Base64-encoded image data returned by the tool.
+    pub result: Option<String>,
 }
 
 /// The content of the output message.

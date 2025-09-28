@@ -51,6 +51,8 @@ pub enum Tool {
         /// Approximate location parameters for the search.
         user_location: Option<UserLocation>,
     },
+    #[serde(rename = "image_generation")]
+    ImageGeneration,
 }
 
 /// Approximate location parameters for the search.
