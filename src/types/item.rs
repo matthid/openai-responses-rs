@@ -1,8 +1,6 @@
 use super::{APIInputMessage, Role};
 use serde::{
-    de::{ Error as DeError },
-    ser::SerializeMap,
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError, ser::SerializeMap,
 };
 use std::collections::HashMap;
 
@@ -75,51 +73,51 @@ impl InputItemType {
     // handy helper for code that still needs &str
     const fn as_str(self) -> &'static str {
         match self {
-            InputItemType::Message                 => "message",
-            InputItemType::FileSearchCall          => "file_search_call",
-            InputItemType::ComputerToolCall        => "computer_call",
-            InputItemType::ComputerToolCallOutput  => "computer_call_output",
-            InputItemType::WebSearchResults        => "web_search_call",
-            InputItemType::FunctionCall            => "function_call",
-            InputItemType::FunctionCallOutput      => "function_call_output",
-            InputItemType::Reasoning               => "reasoning",
+            InputItemType::Message => "message",
+            InputItemType::FileSearchCall => "file_search_call",
+            InputItemType::ComputerToolCall => "computer_call",
+            InputItemType::ComputerToolCallOutput => "computer_call_output",
+            InputItemType::WebSearchResults => "web_search_call",
+            InputItemType::FunctionCall => "function_call",
+            InputItemType::FunctionCallOutput => "function_call_output",
+            InputItemType::Reasoning => "reasoning",
         }
     }
 
     fn from_str(str: &str) -> Option<InputItemType> {
         match str {
-            "message"              => Some(InputItemType::Message),
-            "file_search_call"     => Some(InputItemType::FileSearchCall),
-            "computer_call"        => Some(InputItemType::ComputerToolCall),
+            "message" => Some(InputItemType::Message),
+            "file_search_call" => Some(InputItemType::FileSearchCall),
+            "computer_call" => Some(InputItemType::ComputerToolCall),
             "computer_call_output" => Some(InputItemType::ComputerToolCallOutput),
-            "web_search_call"      => Some(InputItemType::WebSearchResults),
-            "function_call"        => Some(InputItemType::FunctionCall),
+            "web_search_call" => Some(InputItemType::WebSearchResults),
+            "function_call" => Some(InputItemType::FunctionCall),
             "function_call_output" => Some(InputItemType::FunctionCallOutput),
-            "reasoning"            => Some(InputItemType::Reasoning),
+            "reasoning" => Some(InputItemType::Reasoning),
             _ => None,
         }
     }
     // handy helper for code that still needs &str
     const fn from_item(item: &InputItem) -> InputItemType {
         match item {
-            InputItem::InputMessage(_)           => InputItemType::Message,
-            InputItem::OutputMessage(_)          => InputItemType::Message,
-            InputItem::FileSearch(_)             => InputItemType::FileSearchCall,
-            InputItem::ComputerToolCall(_)       => InputItemType::ComputerToolCall,
+            InputItem::InputMessage(_) => InputItemType::Message,
+            InputItem::OutputMessage(_) => InputItemType::Message,
+            InputItem::FileSearch(_) => InputItemType::FileSearchCall,
+            InputItem::ComputerToolCall(_) => InputItemType::ComputerToolCall,
             InputItem::ComputerToolCallOutput(_) => InputItemType::ComputerToolCallOutput,
-            InputItem::WebSearchResults(_)       => InputItemType::WebSearchResults,
-            InputItem::FunctionCall(_)           => InputItemType::FunctionCall,
-            InputItem::FunctionCallOutput(_)     => InputItemType::FunctionCallOutput,
-            InputItem::Reasoning(_)              => InputItemType::Reasoning,
+            InputItem::WebSearchResults(_) => InputItemType::WebSearchResults,
+            InputItem::FunctionCall(_) => InputItemType::FunctionCall,
+            InputItem::FunctionCallOutput(_) => InputItemType::FunctionCallOutput,
+            InputItem::Reasoning(_) => InputItemType::Reasoning,
         }
     }
 }
 #[derive(Serialize)]
 struct WithType<'a, T: Serialize> {
     #[serde(rename = "type")]
-    kind: &'static str,   // the discriminator
+    kind: &'static str, // the discriminator
     #[serde(flatten)]
-    inner: &'a T,         // all the real data
+    inner: &'a T, // all the real data
 }
 
 impl Serialize for InputItem {
@@ -141,14 +139,46 @@ impl Serialize for InputItem {
                 }
                 map.end()
             }
-            InputItem::OutputMessage(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::FileSearch(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::ComputerToolCall(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::ComputerToolCallOutput(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::WebSearchResults(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::FunctionCall(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::FunctionCallOutput(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
-            InputItem::Reasoning(msg) => WithType { kind: type_str, inner: msg }.serialize(serializer),
+            InputItem::OutputMessage(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::FileSearch(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::ComputerToolCall(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::ComputerToolCallOutput(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::WebSearchResults(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::FunctionCall(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::FunctionCallOutput(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
+            InputItem::Reasoning(msg) => WithType {
+                kind: type_str,
+                inner: msg,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -191,13 +221,15 @@ impl<'de> Deserialize<'de> for InputItem {
                 }
             }
 
-            InputItemType::FileSearchCall         => Ok(InputItem::FileSearch(conv(inner)?)),
-            InputItemType::ComputerToolCall       => Ok(InputItem::ComputerToolCall(conv(inner)?)),
-            InputItemType::ComputerToolCallOutput => Ok(InputItem::ComputerToolCallOutput(conv(inner)?)),
-            InputItemType::WebSearchResults       => Ok(InputItem::WebSearchResults(conv(inner)?)),
-            InputItemType::FunctionCall           => Ok(InputItem::FunctionCall(conv(inner)?)),
-            InputItemType::FunctionCallOutput     => Ok(InputItem::FunctionCallOutput(conv(inner)?)),
-            InputItemType::Reasoning              => Ok(InputItem::Reasoning(conv(inner)?)),
+            InputItemType::FileSearchCall => Ok(InputItem::FileSearch(conv(inner)?)),
+            InputItemType::ComputerToolCall => Ok(InputItem::ComputerToolCall(conv(inner)?)),
+            InputItemType::ComputerToolCallOutput => {
+                Ok(InputItem::ComputerToolCallOutput(conv(inner)?))
+            }
+            InputItemType::WebSearchResults => Ok(InputItem::WebSearchResults(conv(inner)?)),
+            InputItemType::FunctionCall => Ok(InputItem::FunctionCall(conv(inner)?)),
+            InputItemType::FunctionCallOutput => Ok(InputItem::FunctionCallOutput(conv(inner)?)),
+            InputItemType::Reasoning => Ok(InputItem::Reasoning(conv(inner)?)),
         }
     }
 }
@@ -579,8 +611,10 @@ pub enum ReasoningStatus {
 #[cfg(test)]
 mod tests {
     use super::{InputItem, OutputMessage};
-    use serde_json::{json, from_value, to_value, Value};
-    use crate::types::{APIInputMessage, ContentInput, FunctionCall, MessageStatus, Role, WebSearchCall};
+    use crate::types::{
+        APIInputMessage, ContentInput, FunctionCall, MessageStatus, Role, WebSearchCall,
+    };
+    use serde_json::{Value, from_value, json, to_value};
 
     #[test]
     fn serialize_input_message() {
@@ -653,7 +687,6 @@ mod tests {
         assert_eq!(v.get("content"), Some(&Value::Array(vec![])));
     }
 
-
     #[test]
     fn serialize_function_call_message() {
         let output = FunctionCall {
@@ -669,7 +702,10 @@ mod tests {
         assert_eq!(v.get("id").and_then(Value::as_str), Some("id123"));
         assert_eq!(v.get("call_id").and_then(Value::as_str), Some("call_id"));
         assert_eq!(v.get("status").and_then(Value::as_str), None);
-        assert_eq!(v.get("arguments").and_then(Value::as_str), Some("arguments"));
+        assert_eq!(
+            v.get("arguments").and_then(Value::as_str),
+            Some("arguments")
+        );
     }
 
     #[test]
@@ -693,7 +729,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn serialize_web_search_message() {
         let output = WebSearchCall {
@@ -702,7 +737,10 @@ mod tests {
         };
         let item = InputItem::WebSearchResults(output);
         let v = to_value(&item).unwrap();
-        assert_eq!(v.get("type").and_then(Value::as_str), Some("web_search_call"));
+        assert_eq!(
+            v.get("type").and_then(Value::as_str),
+            Some("web_search_call")
+        );
         assert_eq!(v.get("id").and_then(Value::as_str), Some("id123"));
         assert_eq!(v.get("status").and_then(Value::as_str), Some("status"));
     }

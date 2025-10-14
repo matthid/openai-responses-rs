@@ -1,4 +1,3 @@
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Attribute, DeriveInput, LitStr};
@@ -10,7 +9,9 @@ fn collect_docs(attrs: &[Attribute]) -> String {
         .filter_map(|attr| {
             if attr.path().is_ident("doc") {
                 // `#[doc = "…"]`
-                attr.parse_args::<LitStr>().ok().map(|lit| lit.value().trim().to_owned())
+                attr.parse_args::<LitStr>()
+                    .ok()
+                    .map(|lit| lit.value().trim().to_owned())
             } else {
                 None
             }

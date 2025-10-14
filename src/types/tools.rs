@@ -23,7 +23,7 @@ pub struct Function {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Tool {
     /// Defines a function in your own code the model can choose to call. Learn more about [function calling](https://platform.openai.com/docs/guides/function-calling).
-    Function (Function),
+    Function(Function),
     /// A tool that searches for relevant content from uploaded files. Learn more about the [file search tool](https://platform.openai.com/docs/guides/tools-file-search).
     FileSearch {
         /// The IDs of the vector stores to search.

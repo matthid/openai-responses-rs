@@ -2,13 +2,14 @@
 #![allow(clippy::doc_markdown)]
 #![doc = include_str!("../README.md")]
 
+use base64::Engine;
+use log::trace;
 use reqwest::{
-    header::{self, HeaderMap, HeaderValue},
     Client as Http, StatusCode,
+    header::{self, HeaderMap, HeaderValue},
 };
 use serde_json::json;
 use std::env;
-use base64::Engine;
 use types::{Error, Include, InputItemList, Request, Response, ResponseResult};
 #[cfg(feature = "stream")]
 use {
@@ -17,7 +18,6 @@ use {
     reqwest_eventsource::{Event as EventSourceEvent, RequestBuilderExt},
     types::Event,
 };
-use log::trace;
 
 /// Types for interacting with the Responses API.
 pub mod types;
@@ -79,12 +79,16 @@ async fn read_body_safely(response: reqwest::Response) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    let prefer_text = ct.contains("text/") || ct.contains("json") || ct.contains("xml") || ct.contains("html");
+    let prefer_text =
+        ct.contains("text/") || ct.contains("json") || ct.contains("xml") || ct.contains("html");
 
     if prefer_text {
         match response.text().await {
             Ok(mut s) => {
-                if s.len() > MAX_BYTES { s.truncate(MAX_BYTES); s.push_str("… [truncated]"); }
+                if s.len() > MAX_BYTES {
+                    s.truncate(MAX_BYTES);
+                    s.push_str("… [truncated]");
+                }
                 s
             }
             Err(e) => format!("<<failed to read body as text: {}>>", e),
@@ -96,13 +100,19 @@ async fn read_body_safely(response: reqwest::Response) -> String {
                 match std::str::from_utf8(slice) {
                     Ok(s) if !s.trim().is_empty() => {
                         let mut s = s.to_string();
-                        if bytes.len() > MAX_BYTES { s.push_str("… [truncated]"); }
+                        if bytes.len() > MAX_BYTES {
+                            s.push_str("… [truncated]");
+                        }
                         s
                     }
                     _ => {
                         let b64 = base64::engine::general_purpose::STANDARD.encode(slice);
                         if bytes.len() > MAX_BYTES {
-                            format!("<<{} bytes binary (base64, truncated)>> {}", bytes.len(), b64)
+                            format!(
+                                "<<{} bytes binary (base64, truncated)>> {}",
+                                bytes.len(),
+                                b64
+                            )
                         } else {
                             format!("<<{} bytes binary (base64)>> {}", bytes.len(), b64)
                         }
@@ -219,14 +229,19 @@ impl Client {
                     Err(reqwest_eventsource::Error::InvalidContentType(header, response)) => {
                         let body = read_body_safely(response).await;
                         trace!("InvalidContentType error: {:#?}", body);
-                        emitter.emit_err(StreamError::InvalidContentType { content_type: header, body }).await;
+                        emitter
+                            .emit_err(StreamError::InvalidContentType {
+                                content_type: header,
+                                body,
+                            })
+                            .await;
                         break; // stop or retry per your policy
                     }
 
                     Err(e @ reqwest_eventsource::Error::Transport(_)) => {
                         trace!("Transport error: {:#?}", e);
                         emitter.emit_err(StreamError::Stream(e)).await;
-                        break;   // stop consuming – the EventSource will be dropped
+                        break; // stop consuming – the EventSource will be dropped
                     }
                     Err(error) => {
                         if matches!(error, reqwest_eventsource::Error::StreamEnded) {
@@ -243,17 +258,29 @@ impl Client {
                 match serde_json::from_str::<Event>(&message.data) {
                     Ok(event) => {
                         match &event {
-                            Event::Error {message, code, param} => {
-                                trace!("Received error line: {} (code: {:#?}, param: {:#?})", message, code, param);
-                            },
-                            _ => { }
+                            Event::Error {
+                                message,
+                                code,
+                                param,
+                            } => {
+                                trace!(
+                                    "Received error line: {} (code: {:#?}, param: {:#?})",
+                                    message, code, param
+                                );
+                            }
+                            _ => {}
                         }
                         emitter.emit(event).await
-                    },
+                    }
                     Err(error) => {
-                        trace!("Serde parsing error: {:#?}.\n Message was: {:#?}", error, message.data);
-                        emitter.emit_err(StreamError::ParsingData(message.data, error)).await
-                    },
+                        trace!(
+                            "Serde parsing error: {:#?}.\n Message was: {:#?}",
+                            error, message.data
+                        );
+                        emitter
+                            .emit_err(StreamError::ParsingData(message.data, error))
+                            .await
+                    }
                 }
             }
 
@@ -322,8 +349,8 @@ impl Client {
 }
 
 /* -------------------------------------------------------------------------
-   Helper: build `Tool` specs automatically from Rust types
-   --------------------------------------------------------------------- */
+Helper: build `Tool` specs automatically from Rust types
+--------------------------------------------------------------------- */
 
 #[cfg(feature = "schema")]
 pub mod tool_builder {
@@ -336,8 +363,8 @@ pub mod tool_builder {
     //! the [`IntoFunction`] trait manually.
 
     use schemars::JsonSchema;
-    use serde_json::Value;
     use serde::de::DeserializeOwned;
+    use serde_json::Value;
 
     use crate::types::Function;
 
@@ -357,7 +384,10 @@ pub mod tool_builder {
                     for branch in any_of_arr.iter_mut() {
                         if let Value::Object(branch_map) = branch {
                             // Prefer explicit object type, but even without it, if properties exist we treat as object
-                            let has_properties = branch_map.get("properties").and_then(Value::as_object).is_some();
+                            let has_properties = branch_map
+                                .get("properties")
+                                .and_then(Value::as_object)
+                                .is_some();
 
                             if has_properties {
                                 // Ensure additionalProperties is false for object branches
@@ -366,11 +396,19 @@ pub mod tool_builder {
                                     .or_insert_with(|| Value::Bool(false));
 
                                 // Build required = all property keys
-                                if let Some(props) = branch_map.get("properties").and_then(Value::as_object) {
-                                    let mut required_keys: Vec<Value> = props.keys().map(|k| Value::String(k.clone())).collect();
+                                if let Some(props) =
+                                    branch_map.get("properties").and_then(Value::as_object)
+                                {
+                                    let mut required_keys: Vec<Value> =
+                                        props.keys().map(|k| Value::String(k.clone())).collect();
                                     // Keep stable order for determinism
-                                    required_keys.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
-                                    branch_map.insert("required".to_string(), Value::Array(required_keys));
+                                    required_keys.sort_by(|a, b| {
+                                        a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or(""))
+                                    });
+                                    branch_map.insert(
+                                        "required".to_string(),
+                                        Value::Array(required_keys),
+                                    );
                                 }
                             }
                         }
@@ -460,11 +498,11 @@ pub mod tool_builder {
         // Preserve original defs/definitions from the root snapshot so we can reattach them if needed
         let saved_defs = match &root_snapshot {
             Value::Object(m) => m.get("$defs").cloned(),
-            _ => None
+            _ => None,
         };
         let saved_definitions = match &root_snapshot {
             Value::Object(m) => m.get("definitions").cloned(),
-            _ => None
+            _ => None,
         };
 
         let mut stack: Vec<String> = Vec::new();
@@ -475,7 +513,9 @@ pub mod tool_builder {
             match v {
                 Value::Object(m) => {
                     if let Some(Value::String(r)) = m.get("$ref") {
-                        if r.starts_with("#/") { return true; }
+                        if r.starts_with("#/") {
+                            return true;
+                        }
                     }
                     m.values().any(has_local_ref)
                 }
@@ -493,10 +533,14 @@ pub mod tool_builder {
             // Local refs remain (e.g., recursive schemas). Ensure root keeps defs for resolvability.
             if let Value::Object(map) = value {
                 if map.get("$defs").is_none() {
-                    if let Some(v) = saved_defs { map.insert("$defs".to_string(), v); }
+                    if let Some(v) = saved_defs {
+                        map.insert("$defs".to_string(), v);
+                    }
                 }
                 if map.get("definitions").is_none() {
-                    if let Some(v) = saved_definitions { map.insert("definitions".to_string(), v); }
+                    if let Some(v) = saved_definitions {
+                        map.insert("definitions".to_string(), v);
+                    }
                 }
             }
         }
@@ -512,9 +556,10 @@ pub mod tool_builder {
                         prev
                     } else {
                         // Create a union of both schemas to be permissive
-                        Value::Object(serde_json::Map::from_iter([
-                            ("anyOf".to_string(), Value::Array(vec![prev, new_schema]))
-                        ]))
+                        Value::Object(serde_json::Map::from_iter([(
+                            "anyOf".to_string(),
+                            Value::Array(vec![prev, new_schema]),
+                        )]))
                     }
                 }
             }
@@ -540,7 +585,8 @@ pub mod tool_builder {
                             .cloned()
                             .unwrap_or_default();
                         // Track in which variant names a given property appears
-                        let mut prop_variants: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+                        let mut prop_variants: std::collections::HashMap<String, Vec<String>> =
+                            std::collections::HashMap::new();
 
                         // We'll flatten unions inside each variant before attempting merge
                         for br in variants.iter_mut() {
@@ -549,11 +595,15 @@ pub mod tool_builder {
 
                         // Determine discriminant field generically: a string property with distinct const values across all variants
                         // First, collect for each variant a map of property -> const string value (or single-value enum)
-                        let mut per_variant_consts: Vec<std::collections::HashMap<String, String>> = Vec::new();
+                        let mut per_variant_consts: Vec<std::collections::HashMap<String, String>> =
+                            Vec::new();
                         for br in variants.iter() {
-                            let mut mapc: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                            let mut mapc: std::collections::HashMap<String, String> =
+                                std::collections::HashMap::new();
                             if let Value::Object(br_map) = br {
-                                if let Some(props) = br_map.get("properties").and_then(|v| v.as_object()) {
+                                if let Some(props) =
+                                    br_map.get("properties").and_then(|v| v.as_object())
+                                {
                                     for (pk, ps) in props.iter() {
                                         if let Some(pmap) = ps.as_object() {
                                             // must be string type (if specified) and have const or enum single value
@@ -564,9 +614,14 @@ pub mod tool_builder {
                                             if type_is_string {
                                                 if let Some(Value::String(cv)) = pmap.get("const") {
                                                     mapc.insert(pk.clone(), cv.clone());
-                                                } else if let Some(Value::Array(arr)) = pmap.get("enum") {
+                                                } else if let Some(Value::Array(arr)) =
+                                                    pmap.get("enum")
+                                                {
                                                     if arr.len() == 1 {
-                                                        if let Some(Value::String(cv)) = arr.first() { mapc.insert(pk.clone(), cv.clone()); }
+                                                        if let Some(Value::String(cv)) = arr.first()
+                                                        {
+                                                            mapc.insert(pk.clone(), cv.clone());
+                                                        }
                                                     }
                                                 }
                                             }
@@ -582,14 +637,23 @@ pub mod tool_builder {
                             // gather candidate keys: intersection of all maps
                             let mut candidates: Option<std::collections::HashSet<String>> = None;
                             for m in &per_variant_consts {
-                                let keys: std::collections::HashSet<String> = m.keys().cloned().collect();
-                                candidates = Some(if let Some(acc) = candidates { acc.intersection(&keys).cloned().collect() } else { keys });
+                                let keys: std::collections::HashSet<String> =
+                                    m.keys().cloned().collect();
+                                candidates = Some(if let Some(acc) = candidates {
+                                    acc.intersection(&keys).cloned().collect()
+                                } else {
+                                    keys
+                                });
                             }
                             if let Some(cands) = candidates {
                                 'outer: for key in cands {
                                     let mut vals: Vec<String> = Vec::new();
                                     for m in &per_variant_consts {
-                                        if let Some(v) = m.get(&key) { vals.push(v.clone()); } else { continue 'outer; }
+                                        if let Some(v) = m.get(&key) {
+                                            vals.push(v.clone());
+                                        } else {
+                                            continue 'outer;
+                                        }
                                     }
                                     // ensure all distinct
                                     let mut set = std::collections::HashSet::new();
@@ -603,9 +667,13 @@ pub mod tool_builder {
                         // Build variant labels
                         let mut variant_labels: Vec<String> = Vec::new();
                         match &chosen_discriminant {
-                            Some((_key, vals)) => { variant_labels = vals.clone(); }
+                            Some((_key, vals)) => {
+                                variant_labels = vals.clone();
+                            }
                             None => {
-                                for idx in 0..variants.len() { variant_labels.push((idx + 1).to_string()); }
+                                for idx in 0..variants.len() {
+                                    variant_labels.push((idx + 1).to_string());
+                                }
                             }
                         }
 
@@ -617,7 +685,10 @@ pub mod tool_builder {
                                         let prev = merged_props.remove(k.as_str());
                                         let merged = merge_property_schema(prev, v);
                                         merged_props.insert(k.clone(), merged);
-                                        prop_variants.entry(k).or_default().push(variant_labels[idx].clone());
+                                        prop_variants
+                                            .entry(k)
+                                            .or_default()
+                                            .push(variant_labels[idx].clone());
                                     }
                                 }
                             }
@@ -631,24 +702,35 @@ pub mod tool_builder {
                                     lst.sort_unstable();
                                     lst.dedup();
                                     let label = match &chosen_discriminant {
-                                        Some((disc_key, _)) => format!("Valid when {} is: {}", disc_key, lst.join(", ")),
-                                        None => format!("Valid in union variants: {}", lst.join(", ")),
+                                        Some((disc_key, _)) => format!(
+                                            "Valid when {} is: {}",
+                                            disc_key,
+                                            lst.join(", ")
+                                        ),
+                                        None => {
+                                            format!("Valid in union variants: {}", lst.join(", "))
+                                        }
                                     };
                                     match v {
-                                        Value::Object(pmap) => {
-                                            match pmap.get_mut("description") {
-                                                Some(Value::String(s)) => {
-                                                    let already = s.contains("Valid when ") || s.contains("Valid in union variants:");
-                                                    if !already {
-                                                        let combined = format!("{} [{}]", s, label);
-                                                        pmap.insert("description".to_string(), Value::String(combined));
-                                                    }
-                                                }
-                                                _ => {
-                                                    pmap.insert("description".to_string(), Value::String(label));
+                                        Value::Object(pmap) => match pmap.get_mut("description") {
+                                            Some(Value::String(s)) => {
+                                                let already = s.contains("Valid when ")
+                                                    || s.contains("Valid in union variants:");
+                                                if !already {
+                                                    let combined = format!("{} [{}]", s, label);
+                                                    pmap.insert(
+                                                        "description".to_string(),
+                                                        Value::String(combined),
+                                                    );
                                                 }
                                             }
-                                        }
+                                            _ => {
+                                                pmap.insert(
+                                                    "description".to_string(),
+                                                    Value::String(label),
+                                                );
+                                            }
+                                        },
                                         _ => {}
                                     }
                                 }
@@ -666,11 +748,17 @@ pub mod tool_builder {
                                 Some(Value::String(s)) => {
                                     if !s.contains(note) {
                                         let combined = format!("{} [{}]", s, note);
-                                        map.insert("description".to_string(), Value::String(combined));
+                                        map.insert(
+                                            "description".to_string(),
+                                            Value::String(combined),
+                                        );
                                     }
                                 }
                                 _ => {
-                                    map.insert("description".to_string(), Value::String(note.to_string()));
+                                    map.insert(
+                                        "description".to_string(),
+                                        Value::String(note.to_string()),
+                                    );
                                 }
                             }
                         } else {
@@ -730,12 +818,16 @@ pub mod tool_builder {
                         true
                     } else if let Some(Value::Array(arr)) = map.get("anyOf") {
                         for v in arr {
-                            if !collect_string_consts(v, out) { return false; }
+                            if !collect_string_consts(v, out) {
+                                return false;
+                            }
                         }
                         true
                     } else if let Some(Value::Array(arr)) = map.get("oneOf") {
                         for v in arr {
-                            if !collect_string_consts(v, out) { return false; }
+                            if !collect_string_consts(v, out) {
+                                return false;
+                            }
                         }
                         true
                     } else {
@@ -748,7 +840,13 @@ pub mod tool_builder {
 
         match value {
             Value::Object(map) => {
-                let union_key = if map.contains_key("anyOf") { Some("anyOf") } else if map.contains_key("oneOf") { Some("oneOf") } else { None };
+                let union_key = if map.contains_key("anyOf") {
+                    Some("anyOf")
+                } else if map.contains_key("oneOf") {
+                    Some("oneOf")
+                } else {
+                    None
+                };
                 if let Some(key) = union_key {
                     if let Some(arr) = map.get(key) {
                         if let Some(branches) = arr.as_array() {
@@ -766,7 +864,10 @@ pub mod tool_builder {
                                 // replace union with string enum
                                 map.remove(key);
                                 map.insert("type".to_string(), Value::String("string".to_string()));
-                                map.insert("enum".to_string(), Value::Array(vals.into_iter().map(Value::String).collect()));
+                                map.insert(
+                                    "enum".to_string(),
+                                    Value::Array(vals.into_iter().map(Value::String).collect()),
+                                );
                             }
                         }
                     }
@@ -797,15 +898,21 @@ pub mod tool_builder {
                     Value::Array(arr) => arr.iter().any(|x| x.as_str() == Some("null")),
                     _ => false,
                 }
-            } else { false }
+            } else {
+                false
+            }
         }
 
         fn union_has_null(map: &Map<String, Value>, key: &str) -> bool {
             if let Some(Value::Array(arr)) = map.get(key) {
                 for b in arr {
                     if let Value::Object(mb) = b {
-                        if map_has_type_null(mb) { return true; }
-                        if let Some(Value::Null) = mb.get("const") { return true; }
+                        if map_has_type_null(mb) {
+                            return true;
+                        }
+                        if let Some(Value::Null) = mb.get("const") {
+                            return true;
+                        }
                     }
                 }
             }
@@ -813,25 +920,40 @@ pub mod tool_builder {
         }
 
         fn schema_is_nullable(map: &Map<String, Value>) -> bool {
-            if map_has_type_null(map) { return true; }
-            if union_has_null(map, "anyOf") || union_has_null(map, "oneOf") { return true; }
-            if let Some(Value::Array(en)) = map.get("enum") {
-                if en.iter().any(|v| v.is_null()) { return true; }
+            if map_has_type_null(map) {
+                return true;
             }
-            if let Some(v) = map.get("const") { if v.is_null() { return true; } }
+            if union_has_null(map, "anyOf") || union_has_null(map, "oneOf") {
+                return true;
+            }
+            if let Some(Value::Array(en)) = map.get("enum") {
+                if en.iter().any(|v| v.is_null()) {
+                    return true;
+                }
+            }
+            if let Some(v) = map.get("const") {
+                if v.is_null() {
+                    return true;
+                }
+            }
             false
         }
 
         fn ensure_nullable(node: &mut Value) {
             match node {
                 Value::Object(map) => {
-                    if schema_is_nullable(map) { return; }
+                    if schema_is_nullable(map) {
+                        return;
+                    }
 
                     if let Some(t) = map.get_mut("type") {
                         match t {
                             Value::String(s) => {
                                 if s.as_str() != "null" {
-                                    *t = Value::Array(vec![Value::String(s.clone()), Value::String("null".to_string())]);
+                                    *t = Value::Array(vec![
+                                        Value::String(s.clone()),
+                                        Value::String("null".to_string()),
+                                    ]);
                                 }
                                 return;
                             }
@@ -848,16 +970,26 @@ pub mod tool_builder {
 
                     if let Some(Value::Array(arr)) = map.get_mut("anyOf") {
                         // add null branch if not present
-                        let present = arr.iter().any(|b| b.get("type").and_then(Value::as_str) == Some("null")
-                            || b.get("type").and_then(Value::as_array).map(|a| a.iter().any(|x| x.as_str() == Some("null"))).unwrap_or(false));
+                        let present = arr.iter().any(|b| {
+                            b.get("type").and_then(Value::as_str) == Some("null")
+                                || b.get("type")
+                                    .and_then(Value::as_array)
+                                    .map(|a| a.iter().any(|x| x.as_str() == Some("null")))
+                                    .unwrap_or(false)
+                        });
                         if !present {
                             arr.push(serde_json::json!({"type":"null"}));
                         }
                         return;
                     }
                     if let Some(Value::Array(arr)) = map.get_mut("oneOf") {
-                        let present = arr.iter().any(|b| b.get("type").and_then(Value::as_str) == Some("null")
-                            || b.get("type").and_then(Value::as_array).map(|a| a.iter().any(|x| x.as_str() == Some("null"))).unwrap_or(false));
+                        let present = arr.iter().any(|b| {
+                            b.get("type").and_then(Value::as_str) == Some("null")
+                                || b.get("type")
+                                    .and_then(Value::as_array)
+                                    .map(|a| a.iter().any(|x| x.as_str() == Some("null")))
+                                    .unwrap_or(false)
+                        });
                         if !present {
                             arr.push(serde_json::json!({"type":"null"}));
                         }
@@ -877,10 +1009,13 @@ pub mod tool_builder {
                 // If this schema has properties, process optionality based on current required
                 if map.get("properties").and_then(Value::as_object).is_some() {
                     // Capture original required BEFORE mutably borrowing properties
-                    let mut required_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut required_set: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     if let Some(Value::Array(req)) = map.get("required") {
                         for r in req {
-                            if let Some(s) = r.as_str() { required_set.insert(s.to_string()); }
+                            if let Some(s) = r.as_str() {
+                                required_set.insert(s.to_string());
+                            }
                         }
                     }
 
@@ -889,7 +1024,9 @@ pub mod tool_builder {
                         // Update each property schema
                         for (k, v) in props.iter_mut() {
                             let was_required = required_set.contains(k);
-                            if !was_required { ensure_nullable(v); }
+                            if !was_required {
+                                ensure_nullable(v);
+                            }
                             // Recurse into property schema for nested objects
                             enforce_full_required_and_nullable(v);
                         }
@@ -897,10 +1034,14 @@ pub mod tool_builder {
                         // Set required to all property keys (sorted)
                         let mut keys: Vec<String> = props.keys().cloned().collect();
                         keys.sort();
-                        map.insert("required".to_string(), Value::Array(keys.into_iter().map(Value::String).collect()));
+                        map.insert(
+                            "required".to_string(),
+                            Value::Array(keys.into_iter().map(Value::String).collect()),
+                        );
                     }
 
-                    map.entry("additionalProperties".to_string()).or_insert(Value::Bool(false));
+                    map.entry("additionalProperties".to_string())
+                        .or_insert(Value::Bool(false));
                 }
 
                 // Recurse into other fields (except the properties map itself which we handled)
@@ -911,7 +1052,9 @@ pub mod tool_builder {
                 }
             }
             Value::Array(arr) => {
-                for it in arr.iter_mut() { enforce_full_required_and_nullable(it); }
+                for it in arr.iter_mut() {
+                    enforce_full_required_and_nullable(it);
+                }
             }
             _ => {}
         }
@@ -927,12 +1070,20 @@ pub mod tool_builder {
         fn pick_object_branch<'a>(map: &'a Map<String, Value>) -> Option<&'a Value> {
             if let Some(Value::Array(arr)) = map.get("anyOf") {
                 for v in arr {
-                    if let Value::Object(m) = v { if is_object_like(m) { return Some(v); } }
+                    if let Value::Object(m) = v {
+                        if is_object_like(m) {
+                            return Some(v);
+                        }
+                    }
                 }
             }
             if let Some(Value::Array(arr)) = map.get("oneOf") {
                 for v in arr {
-                    if let Value::Object(m) = v { if is_object_like(m) { return Some(v); } }
+                    if let Value::Object(m) = v {
+                        if is_object_like(m) {
+                            return Some(v);
+                        }
+                    }
                 }
             }
             None
@@ -945,14 +1096,17 @@ pub mod tool_builder {
                         // Re-run on self with chosen branch by mutating in place
                         let mut tmp = Value::Object(obj.clone());
                         prune_unknown_fields_by_schema(&mut tmp, branch);
-                        if let Value::Object(new_obj) = tmp { *obj = new_obj; }
+                        if let Value::Object(new_obj) = tmp {
+                            *obj = new_obj;
+                        }
                         return;
                     }
                 }
                 // Regular object with properties
                 if let Some(props) = smap.get("properties").and_then(Value::as_object) {
                     // Remove unknown keys
-                    let allowed: std::collections::HashSet<&str> = props.keys().map(|k| k.as_str()).collect();
+                    let allowed: std::collections::HashSet<&str> =
+                        props.keys().map(|k| k.as_str()).collect();
                     obj.retain(|k, _| allowed.contains(k.as_str()));
                     // Recurse
                     for (k, v) in obj.iter_mut() {
@@ -967,11 +1121,15 @@ pub mod tool_builder {
             (Value::Array(arr), Value::Object(smap)) => {
                 // Handle union at schema level for arrays by picking items from an object-like branch if present
                 if let Some(items_schema) = smap.get("items") {
-                    for it in arr.iter_mut() { prune_unknown_fields_by_schema(it, items_schema); }
+                    for it in arr.iter_mut() {
+                        prune_unknown_fields_by_schema(it, items_schema);
+                    }
                     return;
                 }
                 if let Some(branch) = pick_object_branch(smap) {
-                    for it in arr.iter_mut() { prune_unknown_fields_by_schema(it, branch); }
+                    for it in arr.iter_mut() {
+                        prune_unknown_fields_by_schema(it, branch);
+                    }
                     return;
                 }
             }
@@ -980,17 +1138,28 @@ pub mod tool_builder {
     }
 
     /// Convenience: prune unknown fields and then deserialize into a typed model.
-    pub fn parse_args_with_pruning<T: DeserializeOwned>(mut raw: Value, schema: &Value) -> Result<T, String> {
+    pub fn parse_args_with_pruning<T: DeserializeOwned>(
+        mut raw: Value,
+        schema: &Value,
+    ) -> Result<T, String> {
         prune_unknown_fields_by_schema(&mut raw, schema);
         let snapshot = raw.clone();
-        let bytes = serde_json::to_vec(&raw).map_err(|e| format!("Could not serialise JSON value for path-aware deserialisation: {}", e))?;
+        let bytes = serde_json::to_vec(&raw).map_err(|e| {
+            format!(
+                "Could not serialise JSON value for path-aware deserialisation: {}",
+                e
+            )
+        })?;
         let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
         match serde_path_to_error::deserialize::<_, T>(&mut deserializer) {
             Ok(v) => Ok(v),
             Err(e) => {
                 let path = e.path().to_string();
                 let inner = e.into_inner();
-                let msg = format!("JSON → struct deserialisation failed at {}: {}. Input: {}", path, inner, snapshot);
+                let msg = format!(
+                    "JSON → struct deserialisation failed at {}: {}. Input: {}",
+                    path, inner, snapshot
+                );
                 Err(msg)
             }
         }
@@ -1099,10 +1268,16 @@ pub mod tool_builder {
             // Branch has required all keys and additionalProperties=false
             let branch = any_of[0].as_object().unwrap();
             // additionalProperties should be false on the branch
-            assert_eq!(branch.get("additionalProperties"), Some(&Value::Bool(false)));
+            assert_eq!(
+                branch.get("additionalProperties"),
+                Some(&Value::Bool(false))
+            );
 
             let required = branch.get("required").and_then(|v| v.as_array()).unwrap();
-            let req_keys: Vec<String> = required.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            let req_keys: Vec<String> = required
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
             // Sorted order guaranteed by implementation
             assert_eq!(req_keys, vec!["a".to_string(), "b".to_string()]);
 
@@ -1185,8 +1360,14 @@ pub mod tool_builder {
             let any2 = items.get("anyOf").and_then(|v| v.as_array()).unwrap();
             // its first branch object gets required ["z"] and additionalProperties=false
             let inner_obj = any2[0].as_object().unwrap();
-            assert_eq!(inner_obj.get("additionalProperties"), Some(&Value::Bool(false)));
-            let reqz = inner_obj.get("required").and_then(|v| v.as_array()).unwrap();
+            assert_eq!(
+                inner_obj.get("additionalProperties"),
+                Some(&Value::Bool(false))
+            );
+            let reqz = inner_obj
+                .get("required")
+                .and_then(|v| v.as_array())
+                .unwrap();
             assert_eq!(reqz, &vec![Value::String("z".into())]);
         }
 
@@ -1239,8 +1420,16 @@ pub mod tool_builder {
             assert!(desc.contains("union flattened"));
 
             // Each property should carry an annotation of variant membership
-            let a_desc = props.get("a").and_then(|v| v.get("description")).and_then(|v| v.as_str()).unwrap_or("");
-            let b_desc = props.get("b").and_then(|v| v.get("description")).and_then(|v| v.as_str()).unwrap_or("");
+            let a_desc = props
+                .get("a")
+                .and_then(|v| v.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let b_desc = props
+                .get("b")
+                .and_then(|v| v.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             assert!(a_desc.contains("Valid in union variants: 1"));
             assert!(b_desc.contains("Valid in union variants: 2"));
         }
@@ -1278,9 +1467,21 @@ pub mod tool_builder {
             assert!(props.contains_key("y"));
 
             // Descriptions should reference the discriminant field name and its values
-            let kind_desc = props.get("kind").and_then(|v| v.get("description")).and_then(|v| v.as_str()).unwrap_or("");
-            let x_desc = props.get("x").and_then(|v| v.get("description")).and_then(|v| v.as_str()).unwrap_or("");
-            let y_desc = props.get("y").and_then(|v| v.get("description")).and_then(|v| v.as_str()).unwrap_or("");
+            let kind_desc = props
+                .get("kind")
+                .and_then(|v| v.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let x_desc = props
+                .get("x")
+                .and_then(|v| v.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let y_desc = props
+                .get("y")
+                .and_then(|v| v.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
 
             assert!(kind_desc.contains("Valid when kind is:"));
             assert!(x_desc.contains("Valid when kind is: alpha"));
@@ -1300,12 +1501,16 @@ pub mod tool_builder {
             process_schema_recursively(&mut schema);
             flatten_unions(&mut schema);
 
-            let props = schema.get("properties").and_then(|v| v.as_object()).unwrap();
+            let props = schema
+                .get("properties")
+                .and_then(|v| v.as_object())
+                .unwrap();
             let x = props.get("x").unwrap();
             // x should be a schema with anyOf [string, integer]
             let any = x.get("anyOf").and_then(|v| v.as_array()).unwrap();
             assert_eq!(any.len(), 2);
-            let types: std::collections::HashSet<&str> = any.iter()
+            let types: std::collections::HashSet<&str> = any
+                .iter()
                 .map(|v| v.get("type").and_then(|t| t.as_str()).unwrap())
                 .collect();
             assert!(types.contains("string") && types.contains("integer"));
@@ -1330,7 +1535,14 @@ pub mod tool_builder {
             assert_eq!(obj.get("type"), Some(&Value::String("string".into())));
             let en = obj.get("enum").and_then(|v| v.as_array()).unwrap();
             let vals: Vec<String> = en.iter().map(|v| v.as_str().unwrap().to_string()).collect();
-            assert_eq!(vals, vec!["fill_in_the_blank".to_string(), "multiple_choice".to_string(), "translate".to_string()]);
+            assert_eq!(
+                vals,
+                vec![
+                    "fill_in_the_blank".to_string(),
+                    "multiple_choice".to_string(),
+                    "translate".to_string()
+                ]
+            );
         }
 
         #[test]
@@ -1421,7 +1633,10 @@ pub mod tool_builder {
             assert!(obj.get("$defs").is_some());
             let props = obj.get("properties").and_then(|v| v.as_object()).unwrap();
             let next = props.get("next").and_then(|v| v.as_object()).unwrap();
-            assert_eq!(next.get("$ref"), Some(&Value::String("#/$defs/Node".to_string())));
+            assert_eq!(
+                next.get("$ref"),
+                Some(&Value::String("#/$defs/Node".to_string()))
+            );
         }
 
         // ---------------- New tests for enforce_full_required_and_nullable ----------------
@@ -1441,7 +1656,10 @@ pub mod tool_builder {
             let obj = schema.as_object().unwrap();
             // required should contain both a and b
             let req = obj.get("required").and_then(|v| v.as_array()).unwrap();
-            let reqs: Vec<String> = req.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            let reqs: Vec<String> = req
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
             assert_eq!(reqs, vec!["a".to_string(), "b".to_string()]);
             assert_eq!(obj.get("additionalProperties"), Some(&Value::Bool(false)));
 
@@ -1494,9 +1712,12 @@ mod tests_prune {
         });
 
         prune_unknown_fields_by_schema(&mut value, &schema);
-        assert_eq!(value, json!([
-            {"k": "v"},
-            {"k": "w"}
-        ]));
+        assert_eq!(
+            value,
+            json!([
+                {"k": "v"},
+                {"k": "w"}
+            ])
+        );
     }
 }
