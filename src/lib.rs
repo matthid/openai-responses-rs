@@ -5,11 +5,12 @@
 use base64::Engine;
 use log::trace;
 use reqwest::{
-    Client as Http, StatusCode,
     header::{self, HeaderMap, HeaderValue},
+    Client as Http, StatusCode,
 };
 use serde_json::json;
 use std::env;
+use base64::Engine;
 use types::{Error, Include, InputItemList, Request, Response, ResponseResult};
 #[cfg(feature = "stream")]
 use {
@@ -113,6 +114,49 @@ async fn read_body_safely(response: reqwest::Response) -> String {
                                 bytes.len(),
                                 b64
                             )
+                        } else {
+                            format!("<<{} bytes binary (base64)>> {}", bytes.len(), b64)
+                        }
+                    }
+                }
+            }
+            Err(e) => format!("<<failed to read body as bytes: {}>>", e),
+        }
+    }
+}
+
+async fn read_body_safely(response: reqwest::Response) -> String {
+    const MAX_BYTES: usize = 16 * 1024;
+    let ct = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let prefer_text = ct.contains("text/") || ct.contains("json") || ct.contains("xml") || ct.contains("html");
+
+    if prefer_text {
+        match response.text().await {
+            Ok(mut s) => {
+                if s.len() > MAX_BYTES { s.truncate(MAX_BYTES); s.push_str("… [truncated]"); }
+                s
+            }
+            Err(e) => format!("<<failed to read body as text: {}>>", e),
+        }
+    } else {
+        match response.bytes().await {
+            Ok(bytes) => {
+                let slice = &bytes[..bytes.len().min(MAX_BYTES)];
+                match std::str::from_utf8(slice) {
+                    Ok(s) if !s.trim().is_empty() => {
+                        let mut s = s.to_string();
+                        if bytes.len() > MAX_BYTES { s.push_str("… [truncated]"); }
+                        s
+                    }
+                    _ => {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(slice);
+                        if bytes.len() > MAX_BYTES {
+                            format!("<<{} bytes binary (base64, truncated)>> {}", bytes.len(), b64)
                         } else {
                             format!("<<{} bytes binary (base64)>> {}", bytes.len(), b64)
                         }
@@ -349,8 +393,8 @@ impl Client {
 }
 
 /* -------------------------------------------------------------------------
-Helper: build `Tool` specs automatically from Rust types
---------------------------------------------------------------------- */
+   Helper: build `Tool` specs automatically from Rust types
+   --------------------------------------------------------------------- */
 
 #[cfg(feature = "schema")]
 pub mod tool_builder {
